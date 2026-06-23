@@ -50,6 +50,7 @@ YELLOW_MIN = 34   # 34-66 = Yellow
 GREEN_MIN = 67    # 67+   = Green
 
 BADGE_STYLES = {
+    "Excellent": ("#047857", "#ffffff"),
     "Green": ("#d1fae5", "#065f46"),
     "Yellow": ("#fef3c7", "#92400e"),
     "Orange": ("#ffedd5", "#9a3412"),
@@ -328,6 +329,38 @@ def cons_color(score):
     if score >= CONS_YELLOW_MIN:
         return "Yellow"
     return "Red"
+
+
+# Overall rating tiers for the final consumables score. Each tier maps a
+# minimum score to an audit rating, approval status, and re-audit frequency.
+#   96-100 → E - Excellent (Pass)  · Approved     · Every 24 months
+#   86-95  → G - Good (Pass)       · Approved     · Every 18 months
+#   70-85  → C - Complies (Pass)   · Approved     · Every 12 months
+#    0-69  → F - Fail              · Not Approved · Not Applicable
+CONS_RATING_TIERS = [
+    (96, "E - Excellent (Pass)", "Approved", "Every 24 months", "Excellent"),
+    (86, "G - Good (Pass)", "Approved", "Every 18 months", "Green"),
+    (70, "C - Complies (Pass)", "Approved", "Every 12 months", "Yellow"),
+    (0, "F - Fail", "Not Approved", "Not Applicable", "Red"),
+]
+
+
+def cons_rating(score):
+    """Map a final consumables score to its rating tier.
+
+    Returns a dict with ``rating``, ``approval``, ``frequency``, and ``color``.
+    """
+    for threshold, rating, approval, frequency, color in CONS_RATING_TIERS:
+        if score >= threshold:
+            return {
+                "rating": rating,
+                "approval": approval,
+                "frequency": frequency,
+                "color": color,
+            }
+    threshold, rating, approval, frequency, color = CONS_RATING_TIERS[-1]
+    return {"rating": rating, "approval": approval,
+            "frequency": frequency, "color": color}
 
 
 def cons_section_color(questions):
@@ -770,9 +803,14 @@ def generate_cons_ai_summary(sections):
             interp = "indicating moderate conformance with room for improvement."
         else:
             interp = "indicating significant gaps that need attention."
+        rating = cons_rating(score)
         lines.append(
             f"Starting at {CONS_START}, **{total_ded} point(s)** were deducted, "
             f"for a final score of **{score} / {CONS_START} ({color})**, {interp}"
+        )
+        lines.append(
+            f"This score earns a rating of **{rating['rating']}** — "
+            f"**{rating['approval']}**, re-audit **{rating['frequency']}**."
         )
         if counts[RESP_CRITICAL]:
             lines.append(
@@ -818,6 +856,7 @@ def render_cons_left(sections):
     color = cons_color(score)
     counts = cons_counts(all_q)
     total_ded = cons_total_deduction(all_q)
+    rating = cons_rating(score)
 
     st.markdown("### Audit Score")
     sc_col, nc_col = st.columns([3, 2])
@@ -826,7 +865,7 @@ def render_cons_left(sections):
             f"<div class='roll-card'>"
             f"<div class='label'>Score (start {CONS_START} · \u2212{total_ded} deducted)</div>"
             f"<div class='value'>{score} / {CONS_START}</div>"
-            f"{render_badge(color, color)}</div>",
+            f"{render_badge(rating['rating'], rating['color'])}</div>",
             unsafe_allow_html=True,
         )
     with nc_col:
@@ -836,6 +875,24 @@ def render_cons_left(sections):
             f"<div class='value'>"
             f"{counts[RESP_MINOR]} / {counts[RESP_MAJOR]} / {counts[RESP_CRITICAL]}</div>"
             f"{render_badge('minor / major / critical', 'N/A')}</div>",
+            unsafe_allow_html=True,
+        )
+
+    ap_col, fq_col = st.columns(2)
+    with ap_col:
+        st.markdown(
+            f"<div class='roll-card'>"
+            f"<div class='label'>Approval Status</div>"
+            f"<div class='value' style='font-size:1.1rem'>{rating['approval']}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with fq_col:
+        st.markdown(
+            f"<div class='roll-card'>"
+            f"<div class='label'>Audit Frequency</div>"
+            f"<div class='value' style='font-size:1.1rem'>{rating['frequency']}</div>"
+            f"</div>",
             unsafe_allow_html=True,
         )
 
@@ -1093,7 +1150,9 @@ def render_consumables_tab(sections):
         st.caption(
             f"Deduction-based scoring. Every audit starts at {CONS_START} points: "
             "minor \u22121 · major \u22125 · critical \u221250; Meets Requirements & "
-            "N/A = 0 (floored at 0). Indicators: <64 Red · 64-89 Yellow · 90+ Green."
+            "N/A = 0 (floored at 0). Rating: 96-100 E - Excellent · 86-95 G - Good · "
+            "70-85 C - Complies · 0-69 F - Fail. The final score sets the rating, "
+            "approval status, and audit frequency automatically."
         )
     with head_r:
         st.write("")
